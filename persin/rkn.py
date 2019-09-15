@@ -5,7 +5,7 @@ from urllib.request import urlretrieve
 
 import pytricia
 
-from config import RKN_PATH, RKN_DUMP_URL, RKN_NXDOMAIN_URL, RKN_UPDATE_INTERVAL
+from persin.config import RKN_PATH, RKN_DUMP_URL, RKN_UPDATE_INTERVAL
 
 DUMP_PATH = os.path.join(RKN_PATH, "dump.csv")
 NXDOMAIN_PATH = os.path.join(RKN_PATH, "nxdomain.txt")
