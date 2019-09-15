@@ -35,6 +35,8 @@ def exchange_loop(client, remote):
 
 def socks_handler(conn, address):
     client_hello = conn.recv(2)
+    if not client_hello:
+        return
     version, n_methods = struct.unpack("!BB", client_hello)
     assert version == SOCKS_VERSION
     conn.recv(n_methods)
