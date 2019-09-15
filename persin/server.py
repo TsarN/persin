@@ -14,21 +14,20 @@ BLOCKLIST = None
 
 
 def exchange_loop(client, remote):
-    try:
-        while True:
-            ready = select.select([client, remote], [], [])[0]
+    while True:
+        ready = select.select([client, remote], [], [])[0]
 
-            if client in ready:
-                data = client.recv(BUF_SIZE)
-                if remote.send(data) <= 0:
-                    break
+        if client in ready:
+            data = client.recv(BUF_SIZE)
+            if not data:
+                break
+            remote.sendall(data)
 
-            if remote in ready:
-                data = remote.recv(BUF_SIZE)
-                if client.send(data) <= 0:
-                    break
-    except ConnectionResetError:
-        pass
+        if remote in ready:
+            data = remote.recv(BUF_SIZE)
+            if not data:
+                break
+            client.sendall(data)
 
 
 def socks_handler(conn, address):
