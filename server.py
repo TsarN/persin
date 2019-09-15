@@ -45,6 +45,9 @@ class SocksProxy(StreamRequestHandler):
     def handle(self):
         self.authenticate()
         request_header = self.connection.recv(4)
+        if len(request_header) != 4:
+            print(request_header)
+            return
         version, cmd, addr_type = struct.unpack("!BBxB", request_header)
         if cmd != 0x01:
             raise ValueError("invalid or unsupported command")
@@ -61,7 +64,16 @@ class SocksProxy(StreamRequestHandler):
             buf = self.connection.recv(size)
             request_header += struct.pack("!B", size)
             request_header += buf
-            dest_addr = buf.decode()
+            try:
+                dest_addr = socket.gethostbyname(buf.decode())
+                addr_type = 0x01
+            except socket.gaierror as err:
+                logging.info(err)
+                logging.info(f"while attempting to resolve {buf.decode()}")
+                request_header += self.connection.recv(2)
+                reply = struct.pack("!BBBBB", SOCKS_VERSION, 0x04, 0x00, 0x03, size) + buf + request_header[-2:]
+                self.connection.sendall(reply)
+                return
         else:
             raise ValueError("invalid addr_type")
         request_header += self.connection.recv(2)
