@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+import re
 from urllib.request import urlretrieve
 
 import pytricia
@@ -27,6 +28,7 @@ def build_blocklist():
     if is_blocklist_outdated():
         logging.info("RKN block list outdated, downloading it")
         retrieve_blocklist()
+    url_re = re.compile(b'^https://([^/]+)')
     logging.info("Loading RKN block list")
     pyt = pytricia.PyTricia()
     domains = []
@@ -42,8 +44,11 @@ def build_blocklist():
                     pyt[ip.decode()] = 1
                 except ValueError:
                     continue
-            if parts[1]:
-                domains.append(parts[1])
+            if parts[2]:
+                for url in parts[2].split(b" | "):
+                    m = url_re.match(url)
+                    if m:
+                        domains.append(m[1])
     for ip in PROXY_IPS:
         pyt[ip] = 1
     logging.info(f"RKN block list loaded: {len(pyt)} addresses, {len(domains)} domains.")

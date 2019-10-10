@@ -1,6 +1,7 @@
 import ipaddress
 import logging
 import struct
+import re
 
 from gevent.server import StreamServer
 from gevent import socket, select
@@ -56,6 +57,7 @@ def exchange_loop(client, remote, tls_detect=False):
                     try:
                         domain = parse_client_hello(data)
                         if domain in DOMAINS:
+                            print(domain)
                             return data
                     except struct.error:
                         pass
