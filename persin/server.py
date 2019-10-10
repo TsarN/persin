@@ -11,9 +11,38 @@ from persin.rkn import build_blocklist
 SOCKS_VERSION = 0x05
 BUF_SIZE = 4096
 BLOCKLIST = None
+DOMAINS = []
 
 
-def exchange_loop(client, remote):
+def parse_client_hello(data):
+    handshake, proto, size = struct.unpack("!BHH", data[:5])
+    if handshake != 0x16:
+        return
+    data = data[5:]
+    handshake, _, size, client_proto = struct.unpack("!BBHH", data[:6])
+    if handshake != 0x01:
+        return
+    data = data[38:] # skip client random
+    session_len = struct.unpack("!B", data[:1])[0]
+    data = data[1+session_len:]
+    cipher_len = struct.unpack("!H", data[:2])[0]
+    data = data[2+cipher_len:]
+    compression_len = struct.unpack("!B", data[:1])[0]
+    data = data[1+compression_len:]
+    extension_len = struct.unpack("!H", data[:2])[0]
+    extensions = data[2:2+extension_len]
+
+    while extensions:
+        ext, size = struct.unpack("!HH", extensions[:4])
+        data = extensions[4:4+size]
+        extensions = extensions[4+size:]
+        if ext != 0x00:
+            continue
+        _, record, size = struct.unpack("!HBH", data[:5])
+        return data[5:5+size]
+
+
+def exchange_loop(client, remote, tls_detect=False):
     try:
         while True:
             ready = select.select([client, remote], [], [])[0]
@@ -22,9 +51,18 @@ def exchange_loop(client, remote):
                 data = client.recv(BUF_SIZE)
                 if not data:
                     break
+                if tls_detect:
+                    tls_detect = False
+                    try:
+                        domain = parse_client_hello(data)
+                        if domain in DOMAINS:
+                            return data
+                    except struct.error:
+                        pass
                 remote.sendall(data)
 
             if remote in ready:
+                tls_detect = False
                 data = remote.recv(BUF_SIZE)
                 if not data:
                     break
@@ -90,6 +128,8 @@ def socks_handler(conn, address):
         assert auth_mode == 0x00
         upstream.sendall(request_header)
         exchange_loop(conn, upstream)
+        upstream.close()
+        conn.close()
     else:
         remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         remote.connect((dest_addr, dest_port))
@@ -97,14 +137,31 @@ def socks_handler(conn, address):
         bind_address = struct.unpack("!I", socket.inet_aton(bind_address))[0]
         reply = struct.pack("!BBBBIH", SOCKS_VERSION, 0, 0, addr_type, bind_address, bind_port)
         conn.sendall(reply)
-        exchange_loop(conn, remote)
+
+        data = exchange_loop(conn, remote, dest_port == 443)
+        if data:
+            remote.close()
+            # Upgrade to upstream
+            upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            upstream.connect((UPSTREAM_HOST, UPSTREAM_PORT))
+            upstream.sendall(struct.pack("!BBB", SOCKS_VERSION, 1, 0x00))
+            version, auth_mode = upstream.recv(2)
+            assert version == SOCKS_VERSION
+            assert auth_mode == 0x00
+            upstream.sendall(request_header)
+            upstream.recv(10) # skip socks response
+            upstream.sendall(data)
+            exchange_loop(conn, upstream)
+            upstream.close()
+            conn.close()
 
 
 def main():
-    global BLOCKLIST
+    global BLOCKLIST, DOMAINS
     logging.basicConfig(level=logging.INFO)
     if PROXY_RKN:
-        BLOCKLIST = build_blocklist()
+        BLOCKLIST, DOMAINS = build_blocklist()
+        DOMAINS = set(DOMAINS)
     server = StreamServer((HOST, PORT), socks_handler)
     logging.info(f"Started proxy on {HOST}:{PORT}")
     server.serve_forever()

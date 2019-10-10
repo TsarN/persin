@@ -5,16 +5,15 @@ from urllib.request import urlretrieve
 
 import pytricia
 
-from persin.config import RKN_PATH, RKN_DUMP_URL, RKN_UPDATE_INTERVAL
+from persin.config import RKN_PATH, RKN_DUMP_URL
+from persin.config import RKN_UPDATE_INTERVAL, PROXY_IPS
 
 DUMP_PATH = os.path.join(RKN_PATH, "dump.csv")
-NXDOMAIN_PATH = os.path.join(RKN_PATH, "nxdomain.txt")
 
 
 def retrieve_blocklist():
     os.makedirs(RKN_PATH, exist_ok=True)
     urlretrieve(RKN_DUMP_URL, DUMP_PATH)
-    # urlretrieve(RKN_NXDOMAIN_URL, NXDOMAIN_PATH)
 
 
 def is_blocklist_outdated():
@@ -30,17 +29,22 @@ def build_blocklist():
         retrieve_blocklist()
     logging.info("Loading RKN block list")
     pyt = pytricia.PyTricia()
+    domains = []
     with open(DUMP_PATH, "rb") as f:
         for line in f:
-            semicolon = line.find(b";")
-            if semicolon == -1:
+            parts = line.split(b";")
+            if len(parts) <= 1:
                 continue
-            for ip in line[:semicolon].split(b" | "):
+            for ip in parts[0].split(b" | "):
                 if b":" in ip or not ip:
                     continue
                 try:
                     pyt[ip.decode()] = 1
                 except ValueError:
                     continue
-    logging.info(f"RKN block list loaded: {len(pyt)} addresses")
-    return pyt
+            if parts[1]:
+                domains.append(parts[1])
+    for ip in PROXY_IPS:
+        pyt[ip] = 1
+    logging.info(f"RKN block list loaded: {len(pyt)} addresses, {len(domains)} domains.")
+    return pyt, domains
